@@ -1,11 +1,19 @@
+
+/*
+Øving 1:
+Finn alle primtall mellom to gitte tall ved hjelp av et gitt
+antall tråder.
+Skriv til slutt ut en sortert liste av alle primtall som er funnet
+Pass på at de ulike trådene får omtrent like mye arbeid
+*/
+
 use std::thread;
 use std::sync::{Arc, Mutex};
 
-
 pub fn run() {
     //Settings
-    const LOWER_LIMIT: u32 = 2;
-    const UPPER_LIMIT: u32 = 1000;
+    const LOWER_LIMIT: u32 = 0;
+    const UPPER_LIMIT: u32 = 100;
     const NUMBER_OF_THREADS: u32 = 100;
 
     println!("Running prime search with these settings: \n\
@@ -26,13 +34,12 @@ pub fn run() {
             while *count.lock().unwrap() < UPPER_LIMIT {
                 let mut count = count.lock().unwrap();
 
-                if (*count + 1) % 2 == 0 { *count += 2 } else { *count += 1 }
                 check_if_prime(*count, thread_id);
+                if (*count + 1) % 2 == 0 && *count != 1 { *count += 2 } else { *count += 1 }
             }
 
         }));
     }
-
 
     for thread in threads {
         //Join all threads
@@ -43,12 +50,16 @@ pub fn run() {
 fn check_if_prime(num: u32, thread_id: u32) {
     let mut is_prime: bool = true;
 
-    for i in 2..num {
+    for i in 3..num {
+        if num == 2 {break}
         if num % i == 0 {
             is_prime = false;
             break;
         }
     }
+
+    if num < 2 { is_prime = false;}
+
     if is_prime {
         println!("Thread: {} found, Prime: {}", thread_id, num)
     }
