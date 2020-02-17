@@ -6,15 +6,17 @@ Skriv til slutt ut en sortert liste av alle primtall som er funnet
 Pass på at de ulike trådene får omtrent like mye arbeid
 */
 
+
+
 use std::thread;
 use std::sync::{Arc, Mutex};
 use std::iter::Iterator;
 
 pub fn run() {
     //Settings
-    const LOWER_BOUND: u128 = 100_000_000_000_000;
-    const UPPER_BOUND: u128 = 10_000_000_000_000_000_000;
-    const NUMBER_OF_THREADS: u32 = 100;
+    const LOWER_BOUND: u128 = 1;//00_000_000_000_000;
+    const UPPER_BOUND: u128 = 10_0;//_000_000_000_000_000;
+    const NUMBER_OF_THREADS: u32 = 101;
 
     println!("PrimeFinder using Threads created by MokkaLokka\n");
     println!("Running prime search with these settings: \
