@@ -65,42 +65,28 @@ impl WorkerFunctions for Workers {
                         {
                             // Wait for the thread to start up.
                             let mut started = lock.lock().unwrap();
-                            //println!("{}",started );
                             while !*started {
                                 println!("Thread {} is sleeping", thread_id);
                                 started = cvar.wait(started).unwrap();
-                                //println!("Thread {} has awoken", thread_id);
                             }
                         }
                     }
 
                     //Execute next task
                     if *is_running.lock().unwrap() {
-                        //println!("Running task");
                         let mut unlocked_tasks = task_queue.lock().unwrap();
                         if unlocked_tasks.len() > 0 {
                             let task = unlocked_tasks.pop_back().unwrap();
                             task();
                             let mut started = lock.lock().unwrap();
-
                             if unlocked_tasks.len() == 0 {
                                 *started = false;
                             }
                         }
-                    } else {
-                        break;
-                    };
+                    } else {break};
                 }
             }));
         }
-
-        /*        if !*self.is_running.lock().unwrap() {
-                    println!("All tasks completed, shutting down thread");
-                    for thread in threads {
-                        thread.join().unwrap();
-                    }
-                    *self.is_done.lock().unwrap() = true;
-                }*/
     }
 
     fn post(&self, task: fn()) {
