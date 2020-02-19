@@ -1,5 +1,5 @@
 use std::sync::{Arc, Mutex, Condvar};
-use std::{thread};
+use std::{thread, time};
 use std::collections::VecDeque;
 
 pub fn run() {
@@ -10,17 +10,21 @@ pub fn run() {
 
     worker_threads.start();
     event_loop.start();
+    worker_threads.post_timeout(task, 5000);
 
     worker_threads.post(task);
     worker_threads.post(task);
 
     event_loop.post(task);
     event_loop.post(task);
+
 
     worker_threads.stop();
     event_loop.stop();
 
-    while *worker_threads.is_running.lock().unwrap() || *event_loop.is_running.lock().unwrap() {}
+
+    while (*worker_threads.is_running.lock().unwrap() && *event_loop.is_running.lock().unwrap())
+        || (*worker_threads.is_waiting.lock().unwrap() || *event_loop.is_waiting.lock().unwrap()) {}
     println!("Main thread shutting down!");
 }
 
@@ -29,12 +33,14 @@ struct Workers {
     condvar_pair: Arc<(Mutex<bool>, Condvar)>,
     task_queue: Arc<Mutex<VecDeque<fn()>>>,
     is_running: Arc<Mutex<bool>>,
+    is_waiting: Arc<Mutex<bool>>,
 }
 
-trait WorkerFunctions{
+trait WorkerFunctions {
     fn new(number_of_threads: u16) -> Workers;
     fn start(&mut self);
     fn post(&self, task: fn());
+    fn post_timeout(&self, task: fn(), millisec: u64);
     fn stop(&mut self);
 }
 
@@ -45,6 +51,7 @@ impl WorkerFunctions for Workers {
             condvar_pair: Arc::new((Mutex::new(false), Condvar::new())),
             task_queue: Arc::new(Mutex::new(VecDeque::new())),
             is_running: Arc::new(Mutex::new(true)),
+            is_waiting: Arc::new(Mutex::new(false)),
         }
     }
 
@@ -83,7 +90,7 @@ impl WorkerFunctions for Workers {
                                 *started = false;
                             }
                         }
-                    } else {break};
+                    } else { break; };
                 }
             }));
         }
@@ -99,6 +106,19 @@ impl WorkerFunctions for Workers {
         *started = true;
         // We notify the condvar that the value has changed.
         cvar.notify_one();
+    }
+
+    fn post_timeout(&self, task: fn(), millisec: u64) {
+        println!("Post with timeout {}ms", millisec);
+        let is_waiting = self.is_waiting.clone();
+        thread::spawn(move || {
+            {
+                *is_waiting.lock().unwrap() = true;
+            }
+            thread::sleep(time::Duration::from_millis(millisec));
+            task();
+            *is_waiting.lock().unwrap() = false;
+        });
     }
 
     fn stop(&mut self) {
