@@ -1,28 +1,136 @@
-//use std::thread;
+use std::sync::{Arc, Mutex, Condvar};
+use std::{thread};
+use std::collections::VecDeque;
 
-use std::sync::{Arc, Mutex};
+pub fn run() {
+    fn task() { println!("Task Executed") };
 
-pub fn run(){
-    let t:  Vec<fn()> = vec!();
-    let mut tasks = Arc::new(Mutex::new(t));
+    let mut worker_threads = Workers::new(4);
+    let mut event_loop = Workers::new(1);
 
-    fn task1(){println!("Task 1 Executed")}
-    fn task2(){println!("Task 2 Executed")};
+    worker_threads.start();
+    event_loop.start();
 
+    worker_threads.post(task);
+    worker_threads.post(task);
 
-    fn post(tasks :&mut Arc<Mutex<Vec<fn()>>>, task: fn()){
-        let mut unlocked_tasks = tasks.lock().unwrap();
-        unlocked_tasks.push(task);
+    event_loop.post(task);
+    event_loop.post(task);
 
-/*        let ut_iter = unlocked_tasks.iter();
-        for t in ut_iter{
-            t();
-        }*/
+    worker_threads.stop();
+    event_loop.stop();
 
+    while *worker_threads.is_running.lock().unwrap() || *event_loop.is_running.lock().unwrap() {}
+    println!("Main thread shutting down!");
+}
 
+struct Workers {
+    number_of_threads: u16,
+    condvar_pair: Arc<(Mutex<bool>, Condvar)>,
+    task_queue: Arc<Mutex<VecDeque<fn()>>>,
+    is_running: Arc<Mutex<bool>>,
+}
+
+trait WorkerFunctions{
+    fn new(number_of_threads: u16) -> Workers;
+    fn start(&mut self);
+    fn post(&self, task: fn());
+    fn stop(&mut self);
+}
+
+impl WorkerFunctions for Workers {
+    fn new(number_of_threads: u16) -> Workers {
+        Workers {
+            number_of_threads,
+            condvar_pair: Arc::new((Mutex::new(false), Condvar::new())),
+            task_queue: Arc::new(Mutex::new(VecDeque::new())),
+            is_running: Arc::new(Mutex::new(true)),
+        }
     }
 
-    post(&mut tasks, task1);
-    post(&mut tasks, task2);
+    fn start(&mut self) {
+        println!("started");
+        let mut threads = vec!();
 
+        for thread_id in 0..self.number_of_threads {
+            let is_running = self.is_running.clone();
+            let pair2 = self.condvar_pair.clone();
+            let task_queue = Arc::clone(&self.task_queue);
+
+            threads.push(thread::spawn(move || {
+                let (lock, cvar) = &*pair2;
+
+                while *is_running.lock().unwrap() {
+                    {
+                        {
+                            // Wait for the thread to start up.
+                            let mut started = lock.lock().unwrap();
+                            //println!("{}",started );
+                            while !*started {
+                                println!("Thread {} is sleeping", thread_id);
+                                started = cvar.wait(started).unwrap();
+                                //println!("Thread {} has awoken", thread_id);
+                            }
+                        }
+                    }
+
+                    //Execute next task
+                    if *is_running.lock().unwrap() {
+                        //println!("Running task");
+                        let mut unlocked_tasks = task_queue.lock().unwrap();
+                        if unlocked_tasks.len() > 0 {
+                            let task = unlocked_tasks.pop_back().unwrap();
+                            task();
+                            let mut started = lock.lock().unwrap();
+
+                            if unlocked_tasks.len() == 0 {
+                                *started = false;
+                            }
+                        }
+                    } else {
+                        break;
+                    };
+                }
+            }));
+        }
+
+        /*        if !*self.is_running.lock().unwrap() {
+                    println!("All tasks completed, shutting down thread");
+                    for thread in threads {
+                        thread.join().unwrap();
+                    }
+                    *self.is_done.lock().unwrap() = true;
+                }*/
+    }
+
+    fn post(&self, task: fn()) {
+        println!("Post");
+        let mut unlocked_tasks = self.task_queue.lock().unwrap();
+        unlocked_tasks.push_front(task);
+
+        let (lock, cvar) = &*self.condvar_pair;
+        let mut started = lock.lock().unwrap();
+        *started = true;
+        // We notify the condvar that the value has changed.
+        cvar.notify_one();
+    }
+
+    fn stop(&mut self) {
+        loop {
+            if self.task_queue.lock().unwrap().len() == 0 {
+                println!("Stop!");
+                *self.is_running.lock().unwrap() = false;
+
+                let (lock, cvar) = &*self.condvar_pair;
+                let mut started = lock.lock().unwrap();
+                *started = true;
+
+                // We notify the condvar that the value has changed.
+                cvar.notify_all();
+                break;
+            }
+        }
+    }
 }
+
+
